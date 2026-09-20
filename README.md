@@ -112,6 +112,11 @@ Public なら実行時間は無料（Private だと月 2,000分の無料枠を�
 
     cd ~/health-check-monitor && git add -A && git commit -m "..." && git push
 
+### 実質1〜2分間隔（HC_LOOP_SECONDS）
+
+cron は5分刻みだが、`HC_LOOP_SECONDS=270` を渡すと1ジョブ内で巡回を繰り返す（1周≈70秒＋`HC_LOOP_INTERVAL`秒休み）。
+1ジョブで約3周 → 実質90秒間隔。予約完了（`done`）で即終了。Public リポジトリなので実行時間は無料。
+
 ### ローカルとの併用
 
 両方動かしてよい。予約変更は「予約状況ページを引き直して既に目標を満たしていれば何もしない」ガードがあるので、

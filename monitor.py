@@ -314,7 +314,10 @@ def notify_ntfy(title: str, body: str, urgent: bool) -> str:
     req = urllib.request.Request(
         f"https://ntfy.sh/{topic}", data=body.encode("utf-8"),
         headers={"Title": title.encode("utf-8").decode("latin-1", "ignore") or "health-check",
-                 "Priority": "urgent" if urgent else "default", "Tags": "hospital"})
+                 "Priority": "urgent" if urgent else "default", "Tags": "hospital",
+                 # 通知をタップ → そのまま予約サイトのログイン画面へ
+                 "Click": URL_LOGIN,
+                 "Actions": f"view, Open reserve site, {URL_LOGIN}, clear=true"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             return f"ntfy: OK ({r.status})"
@@ -464,6 +467,8 @@ def scan_weeks(site: Site, today: dt.date, stop_at: dt.date | None = None,
         if first in seen_first:
             break  # 遷移していない
         seen_first.add(first)
+        for c in cells:
+            c["page"] = pages - 1  # STEP4 の初期ページから「前週」を何回押した位置か
         opens.extend(c for c in cells if c["mark"] == "○")
         if on_page and on_page(cells):
             break
@@ -545,6 +550,24 @@ def reserve(site: Site, slot: dict, dry_run: bool) -> dict:
             "reason": "" if done else f"予約状況ページが変わっていない: {cur}",
             "time": cur.get("開始時刻") or lab, "reserve_no": cur.get("Web予約番号") or reserve_no,
             "final_url": final_url, "after": cur}
+
+
+def nav_text(slots: list[dict]) -> str:
+    """通知に載せる手動手順（短く）"""
+    c = slots[0]
+    n = c.get("page") or 0
+    back = f"「前週」を{n}回 → " if n else ""
+    return "\n".join([
+        f"手動なら → {URL_LOGIN}",
+        "予約変更 → 鎮静剤にチェック → 次へ",
+        f"{back}{fmt_short(c)} の○ → 時間を選ぶ → 次へ×3 → 予約する",
+    ])
+
+
+def fmt_short(c: dict) -> str:
+    """通知用の短い表記: 渋谷アクシュ 11/20(金) AM"""
+    wd = "月火水木金土日"[c["date"].weekday()]
+    return f"{CENTER_NAME.get(c['cdofc'], c['cdofc'])} {c['date'].month}/{c['date'].day}({wd}) {c['ampm']}"
 
 
 def fmt_slot(c: dict) -> str:
@@ -642,9 +665,8 @@ def run(args) -> int:
             st["done"] = {"slot": fmt_slot(best), "time": res.get("time"), "reserve_no": res.get("reserve_no"),
                           "ts": dt.datetime.now().isoformat(timespec="seconds"), "by": "auto"}
             save_state(st)
-            notify("【ヘルチェック】予約変更 完了: " + fmt_slot(best),
-                   f"{fmt_slot(best)} {res.get('time')}\n人間ドックC + {SEDATION_LABEL}\nWeb予約番号: {res.get('reserve_no')}\n\n"
-                   f"元の予約（{cur.get('受診施設')} {cur.get('ご予約日')}）は置き換わっています。\n確認: {URL_LOGIN}",
+            notify("【ヘルチェック】予約変更 完了 " + fmt_short(best),
+                   f"{fmt_short(best)} {res.get('time') or ''}\n人間ドックC＋鎮静剤\n元の {cur.get('ご予約日', '')} は置き換わりました。\n確認 → {URL_LOGIN}",
                    dry_run=args.dry_run)
             return 0
         log(f"予約失敗: {res}")
@@ -652,8 +674,8 @@ def run(args) -> int:
         if not args.dry_run:
             key = fmt_slot(best) + "|fail"
             if st.get("notified_key") != key:
-                notify("【ヘルチェック】空きあり・自動予約に失敗: " + fmt_slot(best),
-                       f"理由: {res.get('reason')}\n候補:\n" + "\n".join(fmt_slot(c) for c in cands) + f"\n\n手動で: {URL_LOGIN}",
+                notify("【ヘルチェック】空きあり・自動予約に失敗 " + fmt_short(best),
+                       "空き: " + " / ".join(fmt_short(c) for c in cands) + f"\n自動予約は失敗（{res.get('reason')}）\n\n" + nav_text(cands),
                        dry_run=args.dry_run)
                 st["notified_key"] = key
                 save_state(st)
@@ -670,8 +692,8 @@ def run(args) -> int:
         log(f"○は出たが押す前に消えた: {missed}")
         key = "missed|" + ",".join(missed)
         if st.get("notified_key") != key and not args.dry_run:
-            notify("【ヘルチェック】空きが出たが直前に埋まった: " + ", ".join(missed),
-                   "○を検知して押しに行きましたが、その時点で×になっていました。\n動きがある日なので手動でも見てみてください。\n" + URL_LOGIN,
+            notify("【ヘルチェック】空き出現→取れず " + fmt_short(best),
+                   "空き: " + " / ".join(fmt_short(c) for c in cands) + "\n押す前に埋まりました。まだ空いていれば手動で。\n\n" + nav_text(cands),
                    urgent=False, dry_run=args.dry_run)
             st["notified_key"] = key
         save_state(st)
@@ -679,8 +701,8 @@ def run(args) -> int:
     append_history({"event": "found", "slots": [fmt_slot(c) for c in cands]})
     key = fmt_slot(best)
     if st.get("notified_key") != key:
-        body = "条件に合う空きが出ました（自動予約はOFF）:\n" + "\n".join(fmt_slot(c) for c in cands) + f"\n\n{URL_LOGIN}"
-        notify("【ヘルチェック】空き枠あり: " + key, body, dry_run=args.dry_run)
+        body = "空き: " + " / ".join(fmt_short(c) for c in cands) + "\n（自動予約OFF）\n\n" + nav_text(cands)
+        notify("【ヘルチェック】空きあり " + fmt_short(best), body, dry_run=args.dry_run)
         st["notified_key"] = key
     save_state(st)
     return 0
@@ -718,7 +740,9 @@ def main() -> int:
     if args.setup:
         return setup_password()
     if args.test_mail:
-        notify("【ヘルチェック監視】テスト通知", "監視スクリプトからのテストです。", urgent=False)
+        sample = [{"cdofc": "001012", "date": dt.date(2026, 11, 20), "ampm": "AM", "page": 5}]
+        notify("【ヘルチェック】テスト 渋谷アクシュ 11/20(金) AM",
+               "空き: 渋谷アクシュ 11/20(金) AM\n（テスト通知。本番はこの形式）\n\n" + nav_text(sample), urgent=False)
         return 0
     with LOCK_PATH.open("w") as lf:
         try:
@@ -726,14 +750,27 @@ def main() -> int:
         except OSError:
             log("前回実行がまだ動いている。スキップ")
             return 0
-        try:
-            return run(args)
-        except (urllib.error.URLError, OSError, TimeoutError) as e:
-            log(f"通信エラー（巡回中）: {e!r}")
-            return 1
-        except Exception as e:
-            log(f"ERROR: {e!r}")
-            return 1
+        # HC_LOOP_SECONDS>0 なら、その秒数のあいだ巡回を繰り返す
+        # （GitHub Actions は cron が5分刻みなので、1ジョブ内で回して実質1〜2分間隔にする）
+        budget = float(os.environ.get("HC_LOOP_SECONDS", "0") or 0)
+        pause = float(os.environ.get("HC_LOOP_INTERVAL", "20") or 0)
+        started = time.monotonic()
+        rc = 0
+        while True:
+            try:
+                rc = run(args)
+            except (urllib.error.URLError, OSError, TimeoutError) as e:
+                log(f"通信エラー（巡回中）: {e!r}")
+                rc = 1
+            except Exception as e:
+                log(f"ERROR: {e!r}")
+                rc = 1
+            if budget <= 0 or load_state().get("done"):
+                return rc
+            elapsed = time.monotonic() - started
+            if elapsed + pause + 60 > budget:  # 次の1周が収まらないなら終える
+                return rc
+            time.sleep(pause)
 
 
 if __name__ == "__main__":

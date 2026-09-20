@@ -42,6 +42,9 @@ jobs:
           MAIL_TO: ${{ secrets.MAIL_TO }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           AUTO_RESERVE: '1'
+          # 1ジョブ内で約4.5分回し続ける（cron の5分刻みを実質1〜2分間隔にする）
+          HC_LOOP_SECONDS: '270'
+          HC_LOOP_INTERVAL: '20'
           HC_EXCLUDE: '2026-10-31,2026-11-11,2026-12-02'
           MONITOR_UA: 'health-check-monitor/1.0 (personal use; github actions)'
         run: python3 monitor.py

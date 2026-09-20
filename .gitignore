@@ -1,0 +1,7 @@
+state.json
+history.jsonl
+snapshots/
+.lock
+login_id.txt
+com.junsugata.health-check-monitor.plist
+*.bak*

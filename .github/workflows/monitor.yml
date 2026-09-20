@@ -1,0 +1,53 @@
+name: health-check-monitor
+
+on:
+  schedule:
+    # GitHub Actions の cron は UTC（JST-9h）。5分が最短間隔。
+    # ○は1分持たないことがあるので終日 5分間隔（Public リポジトリなら無料）。
+    - cron: '*/5 * * * *'
+  workflow_dispatch:   # 手動実行（疎通確認用）
+
+permissions:
+  contents: read
+
+concurrency:
+  group: health-check-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 前回の state.json（done フラグ・重複通知抑止）を復元
+      - uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: hc-state-${{ github.run_id }}
+          restore-keys: hc-state-
+
+      - name: 監視実行
+        env:
+          TZ: Asia/Tokyo
+          HC_LOGIN_ID: ${{ secrets.HC_LOGIN_ID }}
+          HC_PASSWORD: ${{ secrets.HC_PASSWORD }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          AUTO_RESERVE: '1'
+          HC_EXCLUDE: '2026-10-31,2026-11-11,2026-12-02'
+          MONITOR_UA: 'health-check-monitor/1.0 (personal use; github actions)'
+        run: python3 monitor.py
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: state.json
+          key: hc-state-${{ github.run_id }}

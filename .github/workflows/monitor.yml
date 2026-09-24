@@ -1,10 +1,10 @@
 name: health-check-monitor
 
 on:
-  schedule:
-    # GitHub Actions の cron は UTC（JST-9h）。5分が最短間隔。
-    # ○は1分持たないことがあるので終日 5分間隔（Public リポジトリなら無料）。
-    - cron: '*/5 * * * *'
+  # 2026-09-24 監視終了（渋谷アクシュ 9/30 に予約確定）。定期実行は止め、手動実行だけ残す。
+  # 再開するなら次の2行を有効に戻す:
+  #   schedule:
+  #     - cron: '*/5 * * * *'   # 終日5分間隔（Public リポジトリなら無料）
   workflow_dispatch:   # 手動実行（疎通確認用）
 
 permissions:
